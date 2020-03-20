@@ -19,13 +19,18 @@ public class StartupRunner implements CommandLineRunner {
          * args[2] --- indexName
          * args[3] --- targetTableName
          */
+        String server = args[0] ;
+        String port = args[1] ;
+        String indexName = args[2] ;
+        String targetTableName = args[3] ;
+
         if(args.length == 0){
             logger.warn("main方法缺少运行参数（server,port,indexName,targetTableName）");
             System.exit(0);
         }else{
             ES2DBDemo es2DBDemo = new ES2DBDemo();
 
-            es2DBDemo.directExport(args[0],args[1],args[2],args[3]);
+            es2DBDemo.directExport(server,port,indexName,targetTableName);
 
         }
     }

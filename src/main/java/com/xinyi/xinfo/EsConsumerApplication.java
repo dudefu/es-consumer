@@ -7,14 +7,14 @@ import org.springframework.context.annotation.Bean;
 import com.xinyi.xinfo.runner.StartupRunner;
 
 @SpringBootApplication
-public class XinfoVideoKafkaConsumerApplication {
+public class EsConsumerApplication {
 
     public static void main(String[] args) {
-        SpringApplication.run(XinfoVideoKafkaConsumerApplication.class, args);
+        SpringApplication.run(EsConsumerApplication.class, args);
     }
 
     @Bean
-    public StartupRunner startupRunner(){
+    public StartupRunner startupRunner() {
         return new StartupRunner();
     }
 

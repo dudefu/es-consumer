@@ -15,6 +15,8 @@ package com.xinyi.xinfo.consumer;
  * limitations under the License.
  */
 
+import com.alibaba.fastjson.JSON;
+import com.alibaba.fastjson.JSONObject;
 import com.frameworkset.common.poolman.BatchHandler;
 import com.frameworkset.common.poolman.ConfigSQLExecutor;
 import com.frameworkset.common.poolman.SQLExecutor;
@@ -59,6 +61,7 @@ public class ES2DBDemo {
 
     public static final Logger logger = LoggerFactory.getLogger(ES2DBDemo.class);
     private static PropertiesContainer propertiesContainer = new PropertiesContainer();
+    private static  long dataSize = 0l ;
 
     static {
         propertiesContainer.addConfigPropertiesFile("application.properties");
@@ -131,23 +134,8 @@ public class ES2DBDemo {
         //scroll分页检索
         final int batchSize = Integer.parseInt(propertiesContainer.getProperty("batchSize"));
 
-        List<String> fields = TableOperate.getFields(targetTableName);
-        List<String> fieldsNew = new ArrayList<>();
-        StringBuilder fieldsStr = new StringBuilder();
-        StringBuilder sb = new StringBuilder();
-        for (int i = 0; i < fields.size(); i++) {
-            if (i != fields.size() - 1 && !fields.get(i).equals("id")) {
-                fieldsNew.add(fields.get(i));
-                fieldsStr.append(fields.get(i)).append(",");
-                sb.append("?").append(",");
-            } else if (!fields.get(i).equals("id")) {
-                fieldsNew.add(fields.get(i));
-                fieldsStr.append(fields.get(i));
-                sb.append("?");
-            }
-        }
-        final String sql = "insert into " + targetTableName + " (" + fieldsStr.toString() + ") values(" + sb.toString() + ")";
-        logger.info("===>>> insertSQL : " + sql);
+        List<String> fieldsNew = TableOperate.getFields(targetTableName);
+
         String url = indexName + "/_search";
         String dslName = "scrollQuery";
         final String sqlName = "insertSQL";
@@ -164,7 +152,7 @@ public class ES2DBDemo {
 //				stmt.setString(3, (String) esrecord.get("name"));
 //				stmt.setInt(4, (Integer) esrecord.get("id"));
 //                System.out.println(i);
-                for (int j = 0; j < fieldsNew.size(); j++) {
+                for (int j = 0; j < esrecord.size(); j++) {
                     String field = fieldsNew.get(j);
                     if (field.equals("_id")) {
                         field = "id";
@@ -183,12 +171,6 @@ public class ES2DBDemo {
             }
         };
 
-        //清空数据
-        try {
-            SQLExecutor.delete("delete from "+indexName);
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
         //采用自定义handler函数处理每个scroll的结果集后，response中只会包含总记录数，不会包含记录集合
         //scroll上下文有效期1分钟；大数据量时可以采用handler函数来处理每次scroll检索的结果，规避数据量大时存在的oom内存溢出风险
         final ConfigSQLExecutor configSQLExecutor = new ConfigSQLExecutor(dsl2ndSqlFile);
@@ -196,22 +178,69 @@ public class ES2DBDemo {
         ESDatas<Map> response = clientUtil.scroll(url, dslName, scrollLiveTime, params, Map.class, new ScrollHandler<Map>() {
             public void handle(ESDatas<Map> response, HandlerInfo handlerInfo) throws Exception {//自己处理每次scroll的结果
                 List<Map> datas = response.getDatas();
+                List<JSONObject> jsonObjects = new ArrayList<>();
+                for (Map data : datas) {
+                    Map<String,String> linkedMap = data;
+                    String str =  JSON.toJSONString(linkedMap);
+                    //System.out.println(str);
+                    JSONObject jsonObject = JSON.parseObject(str);
+                    //System.out.println(jsonObject.toJSONString());
+                    jsonObjects.add(jsonObject);
+                }
                 long totalSize = response.getTotalSize();
                 logger.info("索引"+indexName+" 数据总条数 ==>> totalSize : " + totalSize);
 				logger.info("拉取数据成功 ==>> datasRecords : " + datas.size());
 
-                logger.info("开始导入数据... ...");
-                long startTime = System.currentTimeMillis();
-                if (sql == null) {
-                    configSQLExecutor.executeBatch(sqlName, datas, batchSize, batchHandler);
-                } else {
-                    SQLExecutor.executeBatch(sql, datas, batchSize, batchHandler);
-                    logger.info("成功更新数据条数 ===>> datasRecords : " + datas.size() );
+				if(totalSize != 0 ){
+                    //清空数据
+                    try {
+                        SQLExecutor.delete("delete from "+indexName);
+                    } catch (Exception e) {
+                        e.printStackTrace();
+                    }
                 }
-                logger.info("导入数据完成.");
-                long endTime = System.currentTimeMillis();
-                long costTime = endTime - startTime ;
-                logger.info("数据导入耗时："+ costTime/1000+"s");
+
+				//导入方式一：通过insert 方法单条插入
+//				StringBuilder fields = new StringBuilder();
+//				StringBuilder ques = new StringBuilder();
+//				int count = 0 ;
+//                for (Object obj : jsonObjects.get(0).keySet()) {
+//                    count++;
+//                    String field = (String) obj;
+//                    if(count != datas.get(0).size()) {
+//                        fields.append(field.toLowerCase().replace("@","_")).append(",");
+//                        ques.append("?").append(",");
+//                    }else{
+//                        fields.append(field.toLowerCase().replace("@","_"));
+//                        ques.append("?");
+//                    }
+//                }
+//                String tableColumns = fields.toString() ;
+//                final String sql = "insert into " + targetTableName + " (" + tableColumns+ ") values(" + ques.toString() + ")";
+//                logger.info("===>>> insertSQL : " + sql);
+//
+//                logger.info("开始导入数据... ...");
+//                long startTime = System.currentTimeMillis();
+//                if (sql == null) {
+//                    configSQLExecutor.executeBatch(sqlName, datas, batchSize, batchHandler);
+//                } else {
+//                    SQLExecutor.executeBatch(sql, datas, batchSize, batchHandler);
+//                    logger.info("成功更新数据条数 ===>> datasRecords : " + datas.size() );
+//                }
+//                logger.info("导入数据完成.");
+//                long endTime = System.currentTimeMillis();
+//                long costTime = endTime - startTime ;
+//                logger.info("数据导入耗时："+ costTime/1000+"s");
+
+                //导入方式二：通过copyIn方法导入数据
+                BatchInsertGP.batchInsert(jsonObjects,targetTableName);
+                dataSize += batchSize ;
+                long restData = totalSize-dataSize ;
+                if(restData >= 0 ){
+                    logger.info("剩余数据条数 ==>> "+ restData);
+                }else{
+                    logger.info("剩余数据条数 ==>> "+ 0);
+                }
             }
         });
 
